@@ -29,6 +29,5 @@ Players spawn with a selected weapon, eliminate enemies to score points, and com
 - Modular weapon system with scriptable objects  
 - Smooth hit detection using raycasting  
 - Multiplayer support (Photon Fusion / Mirror / Netcode for GameObjects)  
-- Map loading and team spawning  
 - Sound design: gunfire, footsteps, ambient effects  
 - Optimized UI for kill count, ammo, minimap, and match results  
