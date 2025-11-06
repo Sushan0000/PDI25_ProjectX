@@ -18,7 +18,7 @@ Players spawn with a selected weapon, eliminate enemies to score points, and com
 ### Core Mechanics
 - Player movement: **WASD** to move, **Space** to jump, **Shift** to sprint, **Ctrl** to crouch  
 - Weapon system: rifles, pistols, grenades, and melee  
-- Reloading, Recoil and aiming down sights  
+- Reloading, Recoil, Burst fireS and aiming down sights  
 - Health and armor system  
 - Kill feed and score HUD  
 - Match timer and team score display  
