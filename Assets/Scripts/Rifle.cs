@@ -1,32 +1,60 @@
 using UnityEngine;
-using UnityEngine.InputSystem;
+using UnityEngine.InputSystem; // new input system
 
 public class Rifle : MonoBehaviour
 {
     [Header("Rifle")]
     public Camera cam;
-    public float damage = 10f;
-    public float range = 100f;
-    public LayerMask hitMask = ~0;
+    public float giveDamage = 10f;
+    public float shootingRange = 100f;
+
+    public float fireRate = 10f; // bullets per second
+    float nextFireTime = 0f;
+    bool wasPressedLastFrame = false;
 
     void Update()
     {
-        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+        if (Mouse.current == null)
+            return;
+
+        bool isPressed = Mouse.current.leftButton.isPressed;
+
+        // fire once on click
+        if (isPressed && !wasPressedLastFrame)
+        {
             Shoot();
+            nextFireTime = Time.time + 1f / fireRate;
+        }
+        // fire continuously while held
+        else if (isPressed && Time.time >= nextFireTime)
+        {
+            Shoot();
+            nextFireTime = Time.time + 1f / fireRate;
+        }
+
+        wasPressedLastFrame = isPressed;
     }
 
     void Shoot()
     {
-        if (!cam)
-            return;
+        RaycastHit hitInfo;
 
-        Ray ray = new Ray(cam.transform.position, cam.transform.forward);
         if (
-            Physics.Raycast(ray, out RaycastHit hit, range, hitMask, QueryTriggerInteraction.Ignore)
+            Physics.Raycast(
+                cam.transform.position,
+                cam.transform.forward,
+                out hitInfo,
+                shootingRange
+            )
         )
         {
-            Debug.Log(hit.transform.name);
-            // hit.transform.GetComponent<IDamageable>()?.ApplyDamage(damage);
+            Debug.Log(hitInfo.transform.name);
+
+            Health objects = hitInfo.transform.GetComponent<Health>();
+            if (objects != null)
+            {
+                objects.ObjectHitDamage(giveDamage);
+            }
         }
     }
 }
