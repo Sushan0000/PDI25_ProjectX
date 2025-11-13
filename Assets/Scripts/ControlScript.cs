@@ -1,118 +1,172 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // new input
+using UnityEngine.InputSystem; // New Input System
 
 [RequireComponent(typeof(CharacterController))]
 public class ControlScript : MonoBehaviour
 {
     [Header("Movement")]
     [Min(0f)]
-    public float walkSpeed = 2.5f;
+    [SerializeField]
+    private float walkSpeed = 2.5f;
 
     [Min(0f)]
-    public float sprintSpeed = 5.0f;
+    [SerializeField]
+    private float sprintSpeed = 5.0f;
 
     [Min(0f)]
-    public float accel = 12f;
+    [SerializeField]
+    private float accel = 12f;
 
     [Min(0f)]
-    public float decel = 14f;
+    [SerializeField]
+    private float decel = 14f;
 
     [Range(0f, 1f)]
-    public float airControl = 0.35f;
+    [SerializeField]
+    private float airControl = 0.35f;
 
     [Header("Turning")]
     [Min(0f)]
-    public float turnSmoothTime = 0.08f;
+    [SerializeField]
+    private float turnSmoothTime = 0.08f;
 
     [Header("Jump & Gravity")]
-    public float gravity = -9.81f;
-    public float jumpHeight = 1.9f;
-    public float coyoteTime = 0.1f;
-    public float jumpBuffer = 0.12f;
-    public float jumpCooldown = 0.1f;
+    [SerializeField]
+    private float gravity = -9.81f;
+
+    [SerializeField]
+    private float jumpHeight = 1.9f;
+
+    [SerializeField]
+    private float coyoteTime = 0.1f;
+
+    [SerializeField]
+    private float jumpBuffer = 0.12f;
+
+    [SerializeField]
+    private float jumpCooldown = 0.1f;
 
     [Header("References")]
-    public Transform playerCamera; // camera / Cinemachine target
-    public Animator animator;
-    public Transform groundProbe;
-    public float probeRadius = 0.25f;
-    public LayerMask groundMask = ~0;
+    [SerializeField]
+    private Transform playerCamera; // camera / Cinemachine target
+
+    [SerializeField]
+    private Animator animator;
+
+    [SerializeField]
+    private Transform groundProbe;
+
+    [SerializeField]
+    private float probeRadius = 0.25f;
+
+    [SerializeField]
+    private LayerMask groundMask = ~0;
 
     [Header("Cursor Lock")]
-    public bool lockCursorOnStart = true;
-    public Key cursorToggleKey = Key.Escape;
+    [SerializeField]
+    private bool lockCursorOnStart = true;
+
+    [SerializeField]
+    private Key cursorToggleKey = Key.Escape;
 
     // runtime
-    CharacterController cc;
-    Vector3 vel;
-    float speedNow;
-    float yawVel; // for SmoothDampAngle
-    float coyoteTimer,
-        bufferTimer,
-        cooldownTimer;
-    bool grounded;
-    bool cursorLocked;
+    private CharacterController characterController;
+    private Vector3 velocity;
+    private float horizontalSpeed;
+    private float yawVelocity; // for SmoothDampAngle
+
+    private float coyoteTimer;
+    private float bufferTimer;
+    private float cooldownTimer;
+
+    private bool isGrounded;
+    private bool cursorLocked;
 
     // animator hashes (names must match Animator parameters)
-    static readonly int MoveXId = Animator.StringToHash("moveX");
-    static readonly int MoveYId = Animator.StringToHash("moveY");
-    static readonly int SprintId = Animator.StringToHash("Sprint");
-    static readonly int JumpId = Animator.StringToHash("Jump");
-    static readonly int CrouchId = Animator.StringToHash("Crouch");
+    private static readonly int MoveXId = Animator.StringToHash("moveX");
+    private static readonly int MoveYId = Animator.StringToHash("moveY");
+    private static readonly int SprintId = Animator.StringToHash("Sprint");
+    private static readonly int JumpId = Animator.StringToHash("Jump");
+    private static readonly int CrouchId = Animator.StringToHash("Crouch");
 
-    void Awake()
+    private void Awake()
     {
-        cc = GetComponent<CharacterController>();
-        if (animator)
+        characterController = GetComponent<CharacterController>();
+        if (!characterController)
+        {
+            Debug.LogError($"{nameof(ControlScript)} requires a CharacterController on {name}.");
+        }
+
+        if (animator != null)
+        {
             animator.applyRootMotion = false;
+        }
+
         if (lockCursorOnStart)
+        {
             LockCursor();
+        }
+
+        if (!playerCamera && !Camera.main)
+        {
+            Debug.LogWarning(
+                $"{nameof(ControlScript)} on {name} has no playerCamera and no Camera.main; using own transform as reference."
+            );
+        }
+
+        if (!groundProbe)
+        {
+            Debug.LogWarning(
+                $"{nameof(ControlScript)} on {name} has no Ground Probe assigned; using CharacterController.isGrounded only."
+            );
+        }
     }
 
-    void Update()
+    private void Update()
     {
         HandleCursorLock();
-        if (Keyboard.current == null)
+
+        var keyboard = Keyboard.current;
+        if (keyboard == null || characterController == null)
             return;
 
-        var kb = Keyboard.current;
-
         // ----- GROUND CHECK -----
-        grounded = IsGrounded();
+        isGrounded = IsGrounded();
 
         // ----- INPUT (WASD + arrows) -----
-        float h = 0f,
-            v = 0f;
-        if (kb.aKey.isPressed || kb.leftArrowKey.isPressed)
+        float h = 0f;
+        float v = 0f;
+
+        if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed)
             h -= 1f;
-        if (kb.dKey.isPressed || kb.rightArrowKey.isPressed)
+        if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed)
             h += 1f;
-        if (kb.sKey.isPressed || kb.downArrowKey.isPressed)
+        if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed)
             v -= 1f;
-        if (kb.wKey.isPressed || kb.upArrowKey.isPressed)
+        if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed)
             v += 1f;
 
         Vector2 rawInput = new Vector2(h, v);
         bool hasInput = rawInput.sqrMagnitude >= 0.01f;
 
-        bool wantsSprint = kb.leftShiftKey.isPressed && hasInput && grounded;
-        bool wantsCrouch = kb.cKey.isPressed && grounded;
+        bool wantsSprint = keyboard.leftShiftKey.isPressed && hasInput && isGrounded;
+        bool wantsCrouch = keyboard.cKey.isPressed && isGrounded;
 
         // ----- CAMERA-RELATIVE MOVE + ROTATION -----
         Transform cam = playerCamera
             ? playerCamera
             : (Camera.main ? Camera.main.transform : transform);
 
-        Vector3 camFwd = cam.forward;
+        Vector3 camForward = cam.forward;
         Vector3 camRight = cam.right;
 
-        camFwd.y = 0f;
+        camForward.y = 0f;
         camRight.y = 0f;
-        camFwd.Normalize();
+        camForward.Normalize();
         camRight.Normalize();
 
         // movement direction in world space, relative to camera
-        Vector3 moveDir = camFwd * v + camRight * h;
+        Vector3 moveDir = camForward * v + camRight * h;
         if (moveDir.sqrMagnitude > 1f)
             moveDir.Normalize();
 
@@ -123,7 +177,7 @@ public class ControlScript : MonoBehaviour
             float smoothedYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,
-                ref yawVel,
+                ref yawVelocity,
                 Mathf.Max(0.001f, turnSmoothTime)
             );
             transform.rotation = Quaternion.Euler(0f, smoothedYaw, 0f);
@@ -131,34 +185,37 @@ public class ControlScript : MonoBehaviour
 
         // ----- SPEED & ACCEL/DECEL -----
         float targetSpeed = hasInput ? (wantsSprint ? sprintSpeed : walkSpeed) : 0f;
+
         if (wantsCrouch)
         {
-            targetSpeed = 1.5f; // crouch speed
+            // simple crouch: slow movement
+            targetSpeed = Mathf.Min(targetSpeed, 1.5f);
             wantsSprint = false;
         }
 
-        float a = grounded ? accel : Mathf.Lerp(accel, accel * airControl, 1f);
-        float d = grounded ? decel : Mathf.Lerp(decel, decel * airControl, 1f);
-        float rate = targetSpeed > speedNow ? a : d;
-        speedNow = Mathf.MoveTowards(speedNow, targetSpeed, rate * Time.deltaTime);
+        float accelRate = isGrounded ? accel : accel * airControl;
+        float decelRate = isGrounded ? decel : decel * airControl;
+        float rate = targetSpeed > horizontalSpeed ? accelRate : decelRate;
+
+        horizontalSpeed = Mathf.MoveTowards(horizontalSpeed, targetSpeed, rate * Time.deltaTime);
 
         // ----- JUMP TIMING (coyote + buffer + cooldown) -----
-        if (grounded)
+        if (isGrounded)
             coyoteTimer = coyoteTime;
         else
-            coyoteTimer -= Time.deltaTime;
+            coyoteTimer = Mathf.Max(0f, coyoteTimer - Time.deltaTime);
 
-        if (kb.spaceKey.wasPressedThisFrame)
+        if (keyboard.spaceKey.wasPressedThisFrame)
             bufferTimer = jumpBuffer;
         else
-            bufferTimer -= Time.deltaTime;
+            bufferTimer = Mathf.Max(0f, bufferTimer - Time.deltaTime);
 
         if (cooldownTimer > 0f)
             cooldownTimer -= Time.deltaTime;
 
         if (bufferTimer > 0f && coyoteTimer > 0f && cooldownTimer <= 0f && !wantsCrouch)
         {
-            vel.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
             bufferTimer = 0f;
             coyoteTimer = 0f;
             cooldownTimer = jumpCooldown;
@@ -171,13 +228,14 @@ public class ControlScript : MonoBehaviour
         }
 
         // ----- GRAVITY -----
-        if (grounded && vel.y < 0f)
-            vel.y = -2f;
-        vel.y += gravity * Time.deltaTime;
+        if (isGrounded && velocity.y < 0f)
+            velocity.y = -2f; // small downward push to keep grounded
+
+        velocity.y += gravity * Time.deltaTime;
 
         // ----- MOVE CHARACTER -----
-        Vector3 horizontal = moveDir * speedNow;
-        cc.Move((horizontal + vel) * Time.deltaTime);
+        Vector3 horizontalVelocity = moveDir * horizontalSpeed;
+        characterController.Move((horizontalVelocity + velocity) * Time.deltaTime);
 
         // ----- ANIMATOR (locomotion + sprint + crouch) -----
         if (animator)
@@ -187,15 +245,16 @@ public class ControlScript : MonoBehaviour
             if (animInput.sqrMagnitude > 1f)
                 animInput.Normalize();
 
-            const float smooth = 0.1f;
-            float curX = animator.GetFloat(MoveXId);
-            float curY = animator.GetFloat(MoveYId);
+            const float smoothTime = 0.1f;
+
+            float currentX = animator.GetFloat(MoveXId);
+            float currentY = animator.GetFloat(MoveYId);
 
             float targetX = animInput.x;
             float targetY = animInput.y;
 
-            animator.SetFloat(MoveXId, Mathf.Lerp(curX, targetX, Time.deltaTime / smooth));
-            animator.SetFloat(MoveYId, Mathf.Lerp(curY, targetY, Time.deltaTime / smooth));
+            animator.SetFloat(MoveXId, Mathf.Lerp(currentX, targetX, Time.deltaTime / smoothTime));
+            animator.SetFloat(MoveYId, Mathf.Lerp(currentY, targetY, Time.deltaTime / smoothTime));
 
             bool sprinting = wantsSprint && hasInput;
             animator.SetBool(SprintId, sprinting);
@@ -203,10 +262,11 @@ public class ControlScript : MonoBehaviour
         }
     }
 
-    bool IsGrounded()
+    private bool IsGrounded()
     {
-        if (cc.isGrounded)
+        if (characterController != null && characterController.isGrounded)
             return true;
+
         if (!groundProbe)
             return false;
 
@@ -219,13 +279,13 @@ public class ControlScript : MonoBehaviour
     }
 
     // ----- CURSOR LOCK -----
-    void HandleCursorLock()
+    private void HandleCursorLock()
     {
-        var kb = Keyboard.current;
-        if (kb == null)
+        var keyboard = Keyboard.current;
+        if (keyboard == null)
             return;
 
-        if (kb[cursorToggleKey].wasPressedThisFrame)
+        if (keyboard[cursorToggleKey].wasPressedThisFrame)
         {
             if (cursorLocked)
                 UnlockCursor();
@@ -234,17 +294,28 @@ public class ControlScript : MonoBehaviour
         }
     }
 
-    void LockCursor()
+    private void LockCursor()
     {
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
         cursorLocked = true;
     }
 
-    void UnlockCursor()
+    private void UnlockCursor()
     {
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         cursorLocked = false;
     }
+
+#if UNITY_EDITOR
+    private void OnDrawGizmosSelected()
+    {
+        if (!groundProbe)
+            return;
+
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(groundProbe.position, probeRadius);
+    }
+#endif
 }

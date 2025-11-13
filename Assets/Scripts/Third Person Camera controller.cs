@@ -17,7 +17,7 @@ public class ThirdPersonCameraController : MonoBehaviour
     [SerializeField]
     private GameObject aimCanvas;
 
-    [Header("Animation")]
+    [Header("Animation (optional)")]
     [SerializeField]
     private Animator animator;
     private static readonly int AimHash = Animator.StringToHash("Aim");
@@ -27,17 +27,21 @@ public class ThirdPersonCameraController : MonoBehaviour
 
     private void Awake()
     {
+        ValidateReferences();
         SetAimState(false);
     }
 
     private void Update()
     {
-        if (Mouse.current == null)
+        var mouse = Mouse.current;
+        if (mouse == null)
             return;
 
-        bool aimHeld = Mouse.current.rightButton.isPressed;
+        bool aimHeld = mouse.rightButton.isPressed;
         if (aimHeld != isAiming)
+        {
             SetAimState(aimHeld);
+        }
     }
 
     private void SetAimState(bool aiming)
@@ -60,5 +64,15 @@ public class ThirdPersonCameraController : MonoBehaviour
         // --- Animator ---
         if (animator)
             animator.SetBool(AimHash, aiming);
+    }
+
+    private void ValidateReferences()
+    {
+        if (!thirdPersonCamera && !aimCamera)
+        {
+            Debug.LogWarning(
+                $"{nameof(ThirdPersonCameraController)} on {name} has no cameras assigned."
+            );
+        }
     }
 }
