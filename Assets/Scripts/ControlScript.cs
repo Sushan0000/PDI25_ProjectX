@@ -12,10 +12,10 @@ public class ControlScript : MonoBehaviour
     public float sprintSpeed = 5.0f;
 
     [Min(0f)]
-    public float accel = 12f; // to target speed
+    public float accel = 12f;
 
     [Min(0f)]
-    public float decel = 14f; // to zero
+    public float decel = 14f;
 
     [Range(0f, 1f)]
     public float airControl = 0.35f;
@@ -32,52 +32,55 @@ public class ControlScript : MonoBehaviour
     public float jumpCooldown = 0.1f;
 
     [Header("References")]
-    public Transform playerCamera;
+    public Transform playerCamera; // camera / Cinemachine target
     public Animator animator;
-    public Transform groundProbe; // optional; if null uses capsule foot
+    public Transform groundProbe;
     public float probeRadius = 0.25f;
     public LayerMask groundMask = ~0;
 
+    [Header("Cursor Lock")]
+    public bool lockCursorOnStart = true;
+    public Key cursorToggleKey = Key.Escape;
+
     // runtime
     CharacterController cc;
-    Vector3 vel; // y used for vertical; horizontal is computed
-    float speedNow; // smoothed horizontal scalar
+    Vector3 vel;
+    float speedNow;
     float yawVel; // for SmoothDampAngle
     float coyoteTimer,
         bufferTimer,
         cooldownTimer;
     bool grounded;
+    bool cursorLocked;
 
-    // animator param names
-    static readonly int IdleId = Animator.StringToHash("Idle");
-    static readonly int WalkId = Animator.StringToHash("Walk");
+    // animator hashes (names must match Animator parameters)
+    static readonly int MoveXId = Animator.StringToHash("moveX");
+    static readonly int MoveYId = Animator.StringToHash("moveY");
     static readonly int SprintId = Animator.StringToHash("Sprint");
     static readonly int JumpId = Animator.StringToHash("Jump");
+    static readonly int CrouchId = Animator.StringToHash("Crouch");
 
     void Awake()
     {
         cc = GetComponent<CharacterController>();
         if (animator)
             animator.applyRootMotion = false;
+        if (lockCursorOnStart)
+            LockCursor();
     }
 
     void Update()
     {
-        if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
-        {
-            bool locked = Cursor.lockState == CursorLockMode.Locked;
-            Cursor.lockState = locked ? CursorLockMode.None : CursorLockMode.Locked;
-            Cursor.visible = !locked;
-        }
-
+        HandleCursorLock();
         if (Keyboard.current == null)
             return;
 
-        // ground check
+        var kb = Keyboard.current;
+
+        // ----- GROUND CHECK -----
         grounded = IsGrounded();
 
-        // input (WASD + arrows)
-        var kb = Keyboard.current;
+        // ----- INPUT (WASD + arrows) -----
         float h = 0f,
             v = 0f;
         if (kb.aKey.isPressed || kb.leftArrowKey.isPressed)
@@ -89,61 +92,77 @@ public class ControlScript : MonoBehaviour
         if (kb.wKey.isPressed || kb.upArrowKey.isPressed)
             v += 1f;
 
-        Vector3 input = new Vector3(h, 0f, v);
-        if (input.sqrMagnitude > 1f)
-            input.Normalize();
-        bool hasInput = input.sqrMagnitude >= 0.01f;
+        Vector2 rawInput = new Vector2(h, v);
+        bool hasInput = rawInput.sqrMagnitude >= 0.01f;
 
-        // sprint gate: shift + input + grounded
         bool wantsSprint = kb.leftShiftKey.isPressed && hasInput && grounded;
+        bool wantsCrouch = kb.cKey.isPressed && grounded;
 
-        // camera-relative move dir
-        float camYaw = playerCamera ? playerCamera.eulerAngles.y : transform.eulerAngles.y;
-        Vector3 moveDir = hasInput
-            ? Quaternion.Euler(0f, Mathf.Atan2(input.x, input.z) * Mathf.Rad2Deg + camYaw, 0f)
-                * Vector3.forward
-            : Vector3.zero;
+        // ----- CAMERA-RELATIVE MOVE + ROTATION -----
+        Transform cam = playerCamera
+            ? playerCamera
+            : (Camera.main ? Camera.main.transform : transform);
 
-        // rotate toward move
-        if (hasInput)
+        Vector3 camFwd = cam.forward;
+        Vector3 camRight = cam.right;
+
+        camFwd.y = 0f;
+        camRight.y = 0f;
+        camFwd.Normalize();
+        camRight.Normalize();
+
+        // movement direction in world space, relative to camera
+        Vector3 moveDir = camFwd * v + camRight * h;
+        if (moveDir.sqrMagnitude > 1f)
+            moveDir.Normalize();
+
+        // rotate character toward movement direction (handles diagonals)
+        if (moveDir.sqrMagnitude > 0.0001f)
         {
-            float targetYaw = Mathf.Atan2(input.x, input.z) * Mathf.Rad2Deg + camYaw;
-            float smoothed = Mathf.SmoothDampAngle(
+            float targetYaw = Mathf.Atan2(moveDir.x, moveDir.z) * Mathf.Rad2Deg;
+            float smoothedYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,
                 ref yawVel,
-                turnSmoothTime
+                Mathf.Max(0.001f, turnSmoothTime)
             );
-            transform.rotation = Quaternion.Euler(0f, smoothed, 0f);
+            transform.rotation = Quaternion.Euler(0f, smoothedYaw, 0f);
         }
 
-        // choose target speed
+        // ----- SPEED & ACCEL/DECEL -----
         float targetSpeed = hasInput ? (wantsSprint ? sprintSpeed : walkSpeed) : 0f;
+        if (wantsCrouch)
+        {
+            targetSpeed = 1.5f; // crouch speed
+            wantsSprint = false;
+        }
 
-        // speed smoothing, reduced in air
         float a = grounded ? accel : Mathf.Lerp(accel, accel * airControl, 1f);
         float d = grounded ? decel : Mathf.Lerp(decel, decel * airControl, 1f);
         float rate = targetSpeed > speedNow ? a : d;
         speedNow = Mathf.MoveTowards(speedNow, targetSpeed, rate * Time.deltaTime);
 
-        // jump buffer + coyote + cooldown
+        // ----- JUMP TIMING (coyote + buffer + cooldown) -----
         if (grounded)
             coyoteTimer = coyoteTime;
         else
             coyoteTimer -= Time.deltaTime;
+
         if (kb.spaceKey.wasPressedThisFrame)
             bufferTimer = jumpBuffer;
         else
             bufferTimer -= Time.deltaTime;
+
         if (cooldownTimer > 0f)
             cooldownTimer -= Time.deltaTime;
 
-        if (bufferTimer > 0f && coyoteTimer > 0f && cooldownTimer <= 0f)
+        if (bufferTimer > 0f && coyoteTimer > 0f && cooldownTimer <= 0f && !wantsCrouch)
         {
             vel.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
             bufferTimer = 0f;
             coyoteTimer = 0f;
             cooldownTimer = jumpCooldown;
+
             if (animator)
             {
                 animator.ResetTrigger(JumpId);
@@ -151,25 +170,36 @@ public class ControlScript : MonoBehaviour
             }
         }
 
-        // gravity and stick
+        // ----- GRAVITY -----
         if (grounded && vel.y < 0f)
             vel.y = -2f;
         vel.y += gravity * Time.deltaTime;
 
-        // single Move
+        // ----- MOVE CHARACTER -----
         Vector3 horizontal = moveDir * speedNow;
         cc.Move((horizontal + vel) * Time.deltaTime);
 
-        // animator once
+        // ----- ANIMATOR (locomotion + sprint + crouch) -----
         if (animator)
         {
-            bool walking = hasInput && !wantsSprint && grounded && speedNow > 0.01f;
-            bool idle = !hasInput && grounded && speedNow <= 0.01f;
+            // normalize input for blend tree so diagonals stay length 1
+            Vector2 animInput = rawInput;
+            if (animInput.sqrMagnitude > 1f)
+                animInput.Normalize();
 
-            animator.SetBool(SprintId, wantsSprint && grounded);
-            animator.SetBool(WalkId, walking);
-            animator.SetBool(IdleId, idle);
-            // do not reset Jump here
+            const float smooth = 0.1f;
+            float curX = animator.GetFloat(MoveXId);
+            float curY = animator.GetFloat(MoveYId);
+
+            float targetX = animInput.x;
+            float targetY = animInput.y;
+
+            animator.SetFloat(MoveXId, Mathf.Lerp(curX, targetX, Time.deltaTime / smooth));
+            animator.SetFloat(MoveYId, Mathf.Lerp(curY, targetY, Time.deltaTime / smooth));
+
+            bool sprinting = wantsSprint && hasInput;
+            animator.SetBool(SprintId, sprinting);
+            animator.SetBool(CrouchId, wantsCrouch);
         }
     }
 
@@ -179,6 +209,7 @@ public class ControlScript : MonoBehaviour
             return true;
         if (!groundProbe)
             return false;
+
         return Physics.CheckSphere(
             groundProbe.position,
             probeRadius,
@@ -186,205 +217,34 @@ public class ControlScript : MonoBehaviour
             QueryTriggerInteraction.Ignore
         );
     }
+
+    // ----- CURSOR LOCK -----
+    void HandleCursorLock()
+    {
+        var kb = Keyboard.current;
+        if (kb == null)
+            return;
+
+        if (kb[cursorToggleKey].wasPressedThisFrame)
+        {
+            if (cursorLocked)
+                UnlockCursor();
+            else
+                LockCursor();
+        }
+    }
+
+    void LockCursor()
+    {
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+        cursorLocked = true;
+    }
+
+    void UnlockCursor()
+    {
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        cursorLocked = false;
+    }
 }
-
-
-// using UnityEngine;
-// using UnityEngine.InputSystem; // new system
-
-// [RequireComponent(typeof(CharacterController))]
-// public class ControlScript : MonoBehaviour
-// {
-//     [Header("Player Movement")]
-//     public float playerSpeed = 2f;
-//     public float currentSpeed = 0f;
-//     public float sprintSpeed = 3f;
-//     public float currentSprintSpeed = 0f;
-
-//     [Header("Player Camera")]
-//     public Transform playerCamera;
-
-//     [Header("Player Animator and Gravity")]
-//     public CharacterController cC;
-//     public float gravity = -9.81f;
-//     public Animator animator;
-
-//     [Header("Player Jumping and Velocity")]
-//     public float jumpHeight = 1.9f;
-//     public float turnCalmTime = 0.1f;
-//     float turnCalmVelocity;
-//     Vector3 velocity;
-//     public Transform surfaceCheck;
-//     bool onSurface;
-//     public float surfaceDistance = 0.4f;
-//     public LayerMask surfaceMask;
-
-//     void Awake()
-//     {
-//         if (!cC)
-//             cC = GetComponent<CharacterController>();
-//         animator.applyRootMotion = false;
-//     }
-
-//     void Update()
-//     {
-//         onSurface = Physics.CheckSphere(surfaceCheck.position, surfaceDistance, surfaceMask);
-//         if (onSurface && velocity.y < 0f)
-//         {
-//             velocity.y = -2f;
-//         }
-//         velocity.y += gravity * Time.deltaTime;
-//         cC.Move(velocity * Time.deltaTime);
-
-//         PlayerMove();
-
-//         Jump();
-
-//         Sprint();
-//     }
-
-//     void PlayerMove()
-//     {
-//         if (Keyboard.current == null || cC == null)
-//             return;
-//         var kb = Keyboard.current;
-
-//         // WASD + Arrows
-//         float h = 0f,
-//             v = 0f;
-//         if (kb.aKey.isPressed || kb.leftArrowKey.isPressed)
-//             h -= 1f;
-//         if (kb.dKey.isPressed || kb.rightArrowKey.isPressed)
-//             h += 1f;
-//         if (kb.sKey.isPressed || kb.downArrowKey.isPressed)
-//             v -= 1f;
-//         if (kb.wKey.isPressed || kb.upArrowKey.isPressed)
-//             v += 1f;
-
-//         Vector3 input = new(h, 0f, v);
-//         if (input.sqrMagnitude > 1f)
-//             input.Normalize();
-
-//         bool hasInput = input.sqrMagnitude >= 0.01f;
-
-//         // Animator state (no jump trigger here)
-//         if (animator)
-//         {
-//             animator.SetBool("Walk", hasInput && onSurface);
-//             animator.SetBool("Idle", !hasInput && onSurface);
-//             animator.SetBool("Sprint", false);
-//             animator.SetBool("Aim", false);
-//         }
-
-//         // no horizontal move when no input; still allow vertical handled elsewhere
-//         if (!hasInput)
-//             return;
-
-//         // Camera-relative yaw
-//         float yaw = playerCamera ? playerCamera.eulerAngles.y : transform.eulerAngles.y;
-
-//         // Face move direction smoothly
-//         float targetAngle = Mathf.Atan2(input.x, input.z) * Mathf.Rad2Deg + yaw;
-//         float smoothYaw = Mathf.SmoothDampAngle(
-//             transform.eulerAngles.y,
-//             targetAngle,
-//             ref turnCalmVelocity,
-//             turnCalmTime
-//         );
-//         transform.rotation = Quaternion.Euler(0f, smoothYaw, 0f);
-
-//         // Move in camera-forward direction
-//         Vector3 moveDir = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
-//         cC.Move(playerSpeed * Time.deltaTime * moveDir);
-
-//         currentSpeed = playerSpeed;
-//         Jump();
-//     }
-
-//     void Jump()
-//     {
-//         if (Keyboard.current == null)
-//             return;
-
-//         // ground stick
-//         if (onSurface && velocity.y < 0f)
-//             velocity.y = -2f;
-
-//         // one–shot jump
-//         if (onSurface && Keyboard.current.spaceKey.wasPressedThisFrame)
-//         {
-//             velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-
-//             if (animator)
-//             {
-//                 // do NOT reset in an else-branch every frame
-//                 animator.ResetTrigger("Jump"); // optional safety
-//                 animator.SetTrigger("Jump");
-//             }
-//         }
-//     }
-
-//     void Sprint()
-//     {
-//         if (Keyboard.current == null || cC == null)
-//             return;
-//         var kb = Keyboard.current;
-
-//         // sprint key + forward key + grounded (mirrors the picture)
-//         bool sprinting = kb.leftShiftKey.isPressed && onSurface;
-
-//         // read movement like the picture (axes-equivalent via keys)
-//         float h = 0f,
-//             v = 0f;
-//         if (kb.aKey.isPressed || kb.leftArrowKey.isPressed)
-//             h -= 1f;
-//         if (kb.dKey.isPressed || kb.rightArrowKey.isPressed)
-//             h += 1f;
-//         if (kb.sKey.isPressed || kb.downArrowKey.isPressed)
-//             v -= 1f;
-//         if (kb.wKey.isPressed || kb.upArrowKey.isPressed)
-//             v += 1f;
-
-//         Vector3 direction = new Vector3(h, 0f, v);
-//         if (direction.sqrMagnitude > 1f)
-//             direction.Normalize();
-
-//         bool hasDir = direction.magnitude >= 0.1f;
-//         bool grounded = onSurface;
-
-//         if (sprinting && hasDir)
-//         {
-//             if (animator)
-//             {
-//                 animator.SetBool("Sprint", true);
-//                 animator.SetBool("Idle", false);
-//                 animator.SetBool("Walk", false);
-//                 animator.SetBool("Aim", false);
-//             }
-
-//             float yaw = playerCamera ? playerCamera.eulerAngles.y : transform.eulerAngles.y;
-//             float targetAngle = Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg + yaw;
-//             float angle = Mathf.SmoothDampAngle(
-//                 transform.eulerAngles.y,
-//                 targetAngle,
-//                 ref turnCalmVelocity,
-//                 turnCalmTime
-//             );
-//             transform.rotation = Quaternion.Euler(0f, angle, 0f);
-
-//             Vector3 moveDirection = Quaternion.Euler(0f, targetAngle, 0f) * Vector3.forward;
-//             cC.Move(moveDirection.normalized * sprintSpeed * Time.deltaTime);
-//             currentSpeed = sprintSpeed;
-//         }
-//         else
-//         {
-//             if (animator)
-//             {
-//                 animator.SetBool("Sprint", sprinting);
-//                 animator.SetBool("Walk", hasDir && grounded && !sprinting);
-//                 animator.SetBool("Idle", !hasDir && grounded);
-//                 animator.ResetTrigger("Jump"); // to reset jump if needed
-//             }
-//         }
-//     }
-// }
