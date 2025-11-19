@@ -1,5 +1,5 @@
 using UnityEngine;
-using UnityEngine.InputSystem; // New Input System
+using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
 public class ControlScript : MonoBehaviour
@@ -30,6 +30,10 @@ public class ControlScript : MonoBehaviour
     [SerializeField]
     private float turnSmoothTime = 0.08f;
 
+    [Min(0f)]
+    [SerializeField]
+    private float aimTurnSmoothTime = 0.2f;
+
     [Header("Jump & Gravity")]
     [SerializeField]
     private float gravity = -9.81f;
@@ -48,7 +52,7 @@ public class ControlScript : MonoBehaviour
 
     [Header("References")]
     [SerializeField]
-    private Transform playerCamera; // camera / Cinemachine target
+    private Transform playerCamera; // optional, will fall back to Camera.main
 
     [SerializeField]
     private Animator animator;
@@ -62,6 +66,9 @@ public class ControlScript : MonoBehaviour
     [SerializeField]
     private LayerMask groundMask = ~0;
 
+    [SerializeField]
+    private ThirdPersonCameraController aimController;
+
     [Header("Cursor Lock")]
     [SerializeField]
     private bool lockCursorOnStart = true;
@@ -69,20 +76,17 @@ public class ControlScript : MonoBehaviour
     [SerializeField]
     private Key cursorToggleKey = Key.Escape;
 
-    // runtime
     private CharacterController characterController;
     private Vector3 velocity;
     private float horizontalSpeed;
-    private float yawVelocity; // for SmoothDampAngle
-
+    private float yawVelocity;
     private float coyoteTimer;
     private float bufferTimer;
     private float cooldownTimer;
-
     private bool isGrounded;
     private bool cursorLocked;
 
-    // animator hashes (names must match Animator parameters)
+    // Animator hashes
     private static readonly int MoveXId = Animator.StringToHash("moveX");
     private static readonly int MoveYId = Animator.StringToHash("moveY");
     private static readonly int SprintId = Animator.StringToHash("Sprint");
@@ -93,19 +97,15 @@ public class ControlScript : MonoBehaviour
     {
         characterController = GetComponent<CharacterController>();
         if (!characterController)
-        {
             Debug.LogError($"{nameof(ControlScript)} requires a CharacterController on {name}.");
-        }
 
+        if (!aimController)
+            aimController = Object.FindFirstObjectByType<ThirdPersonCameraController>();
         if (animator != null)
-        {
             animator.applyRootMotion = false;
-        }
 
         if (lockCursorOnStart)
-        {
             LockCursor();
-        }
 
         if (!playerCamera && !Camera.main)
         {
@@ -130,10 +130,10 @@ public class ControlScript : MonoBehaviour
         if (keyboard == null || characterController == null)
             return;
 
-        // ----- GROUND CHECK -----
+        // ----- Ground check -----
         isGrounded = IsGrounded();
 
-        // ----- INPUT (WASD + arrows) -----
+        // ----- Input (WASD + arrows) -----
         float h = 0f;
         float v = 0f;
 
@@ -148,47 +148,62 @@ public class ControlScript : MonoBehaviour
 
         Vector2 rawInput = new Vector2(h, v);
         bool hasInput = rawInput.sqrMagnitude >= 0.01f;
-
         bool wantsSprint = keyboard.leftShiftKey.isPressed && hasInput && isGrounded;
         bool wantsCrouch = keyboard.cKey.isPressed && isGrounded;
 
-        // ----- CAMERA-RELATIVE MOVE + ROTATION -----
-        Transform cam = playerCamera
-            ? playerCamera
-            : (Camera.main ? Camera.main.transform : transform);
+        // Aim state: single source of truth from camera controller
+        bool isAiming = aimController != null && aimController.IsAiming;
 
+        // ----- Active camera -----
+        Transform cam;
+        Camera mainCam = Camera.main;
+        if (mainCam != null)
+            cam = mainCam.transform;
+        else if (playerCamera != null)
+            cam = playerCamera;
+        else
+            cam = transform;
+
+        // ----- Camera-relative axes -----
         Vector3 camForward = cam.forward;
         Vector3 camRight = cam.right;
-
         camForward.y = 0f;
         camRight.y = 0f;
         camForward.Normalize();
         camRight.Normalize();
 
-        // movement direction in world space, relative to camera
         Vector3 moveDir = camForward * v + camRight * h;
         if (moveDir.sqrMagnitude > 1f)
             moveDir.Normalize();
 
-        // rotate character toward movement direction (handles diagonals)
-        if (moveDir.sqrMagnitude > 0.0001f)
+        // Direction to face
+        Vector3 lookDir = moveDir;
+
+        // While aiming and not moving, face straight along camera forward
+        if (isAiming && !hasInput)
+            lookDir = camForward;
+
+        // ----- Rotate -----
+        if (lookDir.sqrMagnitude > 0.0001f)
         {
-            float targetYaw = Mathf.Atan2(moveDir.x, moveDir.z) * Mathf.Rad2Deg;
+            float targetYaw = Mathf.Atan2(lookDir.x, lookDir.z) * Mathf.Rad2Deg;
+            float smoothTime = isAiming ? aimTurnSmoothTime : turnSmoothTime;
+
             float smoothedYaw = Mathf.SmoothDampAngle(
                 transform.eulerAngles.y,
                 targetYaw,
                 ref yawVelocity,
-                Mathf.Max(0.001f, turnSmoothTime)
+                Mathf.Max(0.001f, smoothTime)
             );
+
             transform.rotation = Quaternion.Euler(0f, smoothedYaw, 0f);
         }
 
-        // ----- SPEED & ACCEL/DECEL -----
+        // ----- Speed & accel/decel -----
         float targetSpeed = hasInput ? (wantsSprint ? sprintSpeed : walkSpeed) : 0f;
 
         if (wantsCrouch)
         {
-            // simple crouch: slow movement
             targetSpeed = Mathf.Min(targetSpeed, 1.5f);
             wantsSprint = false;
         }
@@ -199,7 +214,7 @@ public class ControlScript : MonoBehaviour
 
         horizontalSpeed = Mathf.MoveTowards(horizontalSpeed, targetSpeed, rate * Time.deltaTime);
 
-        // ----- JUMP TIMING (coyote + buffer + cooldown) -----
+        // ----- Jump timing (coyote + buffer + cooldown) -----
         if (isGrounded)
             coyoteTimer = coyoteTime;
         else
@@ -227,34 +242,35 @@ public class ControlScript : MonoBehaviour
             }
         }
 
-        // ----- GRAVITY -----
+        // ----- Gravity -----
         if (isGrounded && velocity.y < 0f)
-            velocity.y = -2f; // small downward push to keep grounded
+            velocity.y = -2f;
 
         velocity.y += gravity * Time.deltaTime;
 
-        // ----- MOVE CHARACTER -----
+        // ----- Move Character -----
         Vector3 horizontalVelocity = moveDir * horizontalSpeed;
         characterController.Move((horizontalVelocity + velocity) * Time.deltaTime);
 
-        // ----- ANIMATOR (locomotion + sprint + crouch) -----
+        // ----- Animator -----
         if (animator)
         {
-            // normalize input for blend tree so diagonals stay length 1
             Vector2 animInput = rawInput;
             if (animInput.sqrMagnitude > 1f)
                 animInput.Normalize();
 
             const float smoothTime = 0.1f;
-
             float currentX = animator.GetFloat(MoveXId);
             float currentY = animator.GetFloat(MoveYId);
 
-            float targetX = animInput.x;
-            float targetY = animInput.y;
-
-            animator.SetFloat(MoveXId, Mathf.Lerp(currentX, targetX, Time.deltaTime / smoothTime));
-            animator.SetFloat(MoveYId, Mathf.Lerp(currentY, targetY, Time.deltaTime / smoothTime));
+            animator.SetFloat(
+                MoveXId,
+                Mathf.Lerp(currentX, animInput.x, Time.deltaTime / smoothTime)
+            );
+            animator.SetFloat(
+                MoveYId,
+                Mathf.Lerp(currentY, animInput.y, Time.deltaTime / smoothTime)
+            );
 
             bool sprinting = wantsSprint && hasInput;
             animator.SetBool(SprintId, sprinting);
@@ -278,7 +294,6 @@ public class ControlScript : MonoBehaviour
         );
     }
 
-    // ----- CURSOR LOCK -----
     private void HandleCursorLock()
     {
         var keyboard = Keyboard.current;
