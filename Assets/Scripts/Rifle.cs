@@ -54,6 +54,22 @@ public class Rifle : MonoBehaviour
     [SerializeField]
     private float reloadTime = 2f;
 
+    [Header("Audio")]
+    [SerializeField]
+    private AudioSource audioSource;
+
+    [SerializeField]
+    private AudioClip fireClip;
+
+    [SerializeField]
+    private AudioClip reloadClip;
+
+    [SerializeField]
+    private AudioClip emptyClip; // when trigger pulled with no ammo
+
+    [SerializeField]
+    private AudioClip cockClip; // optional: bolt / slide sound
+
     // --- State ---
     private int ammoInMag;
     private bool isReloading;
@@ -85,6 +101,9 @@ public class Rifle : MonoBehaviour
 
         if (animator != null)
             upperBodyLayerIndex = animator.GetLayerIndex(upperBodyLayerName);
+
+        if (!audioSource)
+            audioSource = GetComponent<AudioSource>();
     }
 
     private void Start()
@@ -173,6 +192,7 @@ public class Rifle : MonoBehaviour
         if (ammoInMag <= 0)
         {
             Debug.Log("Magazine empty.");
+            PlayClip(emptyClip); // play dry-fire click
             TryStartReload(); // Auto-reload attempt
             return;
         }
@@ -191,6 +211,7 @@ public class Rifle : MonoBehaviour
 
         if (muzzleFlash != null)
             muzzleFlash.Play();
+        PlayClip(fireClip); // play gunshot here
 
         Ray ray = new Ray(activeCam.transform.position, activeCam.transform.forward);
 
@@ -239,6 +260,7 @@ public class Rifle : MonoBehaviour
         isReloading = true;
         OnReloadStarted?.Invoke();
         Debug.Log("Reloading...");
+        PlayClip(reloadClip); // generic reload sound (or “mag out”)
 
         if (animator != null)
         {
@@ -260,7 +282,8 @@ public class Rifle : MonoBehaviour
 
         ammoInMag += bulletsToLoad;
         reserveAmmo -= bulletsToLoad;
-
+        // optional second sound when reload completes
+        PlayClip(cockClip); // bolt / slide / chamber sound
         isReloading = false;
         reloadCoroutine = null;
         OnReloadComplete?.Invoke();
@@ -277,5 +300,13 @@ public class Rifle : MonoBehaviour
 
         reserveAmmo += amount;
         OnAmmoChanged?.Invoke();
+    }
+
+    private void PlayClip(AudioClip clip, float volume = 1f)
+    {
+        if (clip == null || audioSource == null)
+            return;
+
+        audioSource.PlayOneShot(clip, volume);
     }
 }
