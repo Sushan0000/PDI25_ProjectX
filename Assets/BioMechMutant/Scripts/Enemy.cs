@@ -3,6 +3,7 @@ using UnityEngine.AI;
 
 [RequireComponent(typeof(NavMeshAgent))]
 [RequireComponent(typeof(Collider))]
+[RequireComponent(typeof(AudioSource))]
 public class MechMutantEnemy : MonoBehaviour, IDamageable
 {
     private enum State
@@ -75,7 +76,7 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
 
     // locomotion
     [SerializeField]
-    private string moveSpeedParam = "MoveSpeed"; // float
+    private string MoveSpeedParam = "MoveSpeed"; // float
 
     // combat / death
     [SerializeField]
@@ -188,11 +189,14 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
                 HandleIdle();
                 break;
             case State.Chasing:
+                HandleChasing();
                 break;
             case State.Attacking:
                 HandleAttacking();
                 break;
         }
+
+        UpdateAnimator();
     }
 
     private void TryFindTarget()
@@ -215,6 +219,43 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
 
         if (agent != null && !agent.isStopped)
             agent.isStopped = true;
+
+        HandleIdleSpecialAnimations();
+    }
+
+    private void HandleChasing()
+    {
+        if (!HasTarget)
+        {
+            ChangeState(State.Idle);
+            return;
+        }
+
+        float distance = Vector3.Distance(transform.position, target.position);
+
+        if (distance > loseInterestRadius || !IsTargetInDetectionRange() || !CanSeeTarget())
+        {
+            ChangeState(State.Idle);
+            return;
+        }
+
+        if (distance <= attackRange)
+        {
+            ChangeState(State.Attacking);
+            return;
+        }
+
+        if (agent == null)
+            return;
+
+        if (Time.time >= nextPathUpdateTime)
+        {
+            nextPathUpdateTime = Time.time + pathUpdateInterval;
+            agent.isStopped = false;
+            agent.SetDestination(target.position);
+        }
+
+        FaceTarget();
     }
 
     private void HandleAttacking()
@@ -351,6 +392,26 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         transform.rotation = Quaternion.Slerp(transform.rotation, targetRot, Time.deltaTime * 10f);
     }
 
+    private void UpdateAnimator()
+    {
+        if (animator == null)
+            return;
+
+        float MoveSpeed = 0f;
+        // Only drive locomotion speed when NOT attacking or dead
+        if (agent != null && agent.enabled && state != State.Attacking && state != State.Dead)
+            MoveSpeed = agent.velocity.magnitude;
+
+        if (!string.IsNullOrEmpty(MoveSpeedParam))
+            animator.SetFloat(MoveSpeedParam, MoveSpeed);
+
+        if (!string.IsNullOrEmpty(isAttackingBoolParam))
+            animator.SetBool(isAttackingBoolParam, state == State.Attacking);
+
+        if (!string.IsNullOrEmpty(isDeadBoolParam))
+            animator.SetBool(isDeadBoolParam, state == State.Dead);
+    }
+
     private void TriggerAttack()
     {
         if (animator != null)
@@ -401,6 +462,52 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         {
             animator.CrossFadeInFixedTime(deathStateName, 0.05f, 0, 0f);
         }
+    }
+
+    // idle / flex / roar random cycle while in Idle state
+    private void HandleIdleSpecialAnimations()
+    {
+        if (animator == null)
+            return;
+
+        if (Time.time < nextIdleSpecialTime)
+            return;
+
+        // if somehow still moving, skip
+        if (agent != null && agent.velocity.sqrMagnitude > 0.01f)
+        {
+            ScheduleNextIdleSpecial();
+            return;
+        }
+
+        // 0 = plain idle (no trigger), 1 = flex, 2 = roar
+        int variantCount = 3;
+        int index;
+        do
+        {
+            index = Random.Range(0, variantCount);
+        } while (index == lastIdleVariant && variantCount > 1);
+
+        lastIdleVariant = index;
+
+        switch (index)
+        {
+            case 0:
+                // plain idle: Locomotion blend tree already playing idle clip
+                break;
+
+            case 1:
+                if (!string.IsNullOrEmpty(flexTriggerParam))
+                    animator.SetTrigger(flexTriggerParam);
+                break;
+
+            case 2:
+                if (!string.IsNullOrEmpty(roarTriggerParam))
+                    animator.SetTrigger(roarTriggerParam);
+                break;
+        }
+
+        ScheduleNextIdleSpecial();
     }
 
     private void ScheduleNextIdleSpecial()
