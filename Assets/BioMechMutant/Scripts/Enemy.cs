@@ -58,9 +58,8 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
     [SerializeField]
     private LayerMask playerLayer;
 
-    // 0 = punch, 1 = swipe, 2 = jump attack
     [SerializeField]
-    private int numberOfAttackTypes = 3;
+    private int numberOfAttackTypes = 3; // 0 = punch, 1 = swipe, 2 = jump attack
 
     [Header("Health")]
     [SerializeField]
@@ -188,11 +187,15 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
                 HandleIdle();
                 break;
             case State.Chasing:
+                HandleChasing();
                 break;
             case State.Attacking:
                 HandleAttacking();
                 break;
         }
+
+        UpdateAnimatorLocomotion();
+        TryPlayIdleSpecial();
     }
 
     private void TryFindTarget()
@@ -217,6 +220,42 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
             agent.isStopped = true;
     }
 
+    private void HandleChasing()
+    {
+        if (!HasTarget)
+        {
+            ChangeState(State.Idle);
+            return;
+        }
+
+        float distance = Vector3.Distance(transform.position, target.position);
+
+        // lost interest or target too far
+        if (distance > loseInterestRadius || !IsTargetInDetectionRange() || !CanSeeTarget())
+        {
+            ChangeState(State.Idle);
+            return;
+        }
+        // close enough to attack
+        if (distance <= attackRange)
+        {
+            ChangeState(State.Attacking);
+            return;
+        }
+
+        if (agent != null)
+        {
+            if (agent.isStopped)
+                agent.isStopped = false;
+
+            if (Time.time >= nextPathUpdateTime)
+            {
+                nextPathUpdateTime = Time.time + pathUpdateInterval;
+                agent.SetDestination(target.position);
+            }
+        }
+    }
+
     private void HandleAttacking()
     {
         if (!HasTarget)
@@ -227,6 +266,7 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
 
         float distance = Vector3.Distance(transform.position, target.position);
 
+        // if target moves out of attack range, chase again
         if (distance > attackRange + 0.5f)
         {
             ChangeState(State.Chasing);
@@ -288,10 +328,26 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
 
                 TriggerDeath();
                 PlayRandomClip(deathClips);
-
                 Destroy(gameObject, deathDestroyDelay);
                 break;
         }
+    }
+
+    private void UpdateAnimatorLocomotion()
+    {
+        if (animator == null)
+            return;
+
+        float speed = 0f;
+
+        if (agent != null && agent.enabled)
+            speed = agent.velocity.magnitude;
+
+        if (!string.IsNullOrEmpty(moveSpeedParam))
+            animator.SetFloat(moveSpeedParam, speed);
+
+        if (!string.IsNullOrEmpty(isAttackingBoolParam))
+            animator.SetBool(isAttackingBoolParam, state == State.Attacking);
     }
 
     private bool IsTargetInDetectionRange()
@@ -360,7 +416,6 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
                 0,
                 numberOfAttackTypes - 1
             );
-
             float attackIndex = attackIndexInt;
 
             if (!string.IsNullOrEmpty(attackIndexParam))
@@ -398,9 +453,7 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
             animator.SetTrigger(dieTriggerParam);
 
         if (!string.IsNullOrEmpty(deathStateName))
-        {
             animator.CrossFadeInFixedTime(deathStateName, 0.05f, 0, 0f);
-        }
     }
 
     private void ScheduleNextIdleSpecial()
@@ -409,6 +462,38 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         idleSpecialMaxDelay = Mathf.Max(idleSpecialMinDelay, idleSpecialMaxDelay);
 
         nextIdleSpecialTime = Time.time + Random.Range(idleSpecialMinDelay, idleSpecialMaxDelay);
+    }
+
+    private void TryPlayIdleSpecial()
+    {
+        if (state != State.Idle)
+            return;
+
+        if (animator == null)
+            return;
+
+        if (Time.time < nextIdleSpecialTime)
+            return;
+
+        // pick Flex or Roar but avoid repeating the last one
+        int variant;
+        do
+        {
+            variant = Random.Range(1, 3); // 1 or 2
+        } while (variant == lastIdleVariant);
+
+        lastIdleVariant = variant;
+
+        if (variant == 1 && !string.IsNullOrEmpty(flexTriggerParam))
+        {
+            animator.SetTrigger(flexTriggerParam);
+        }
+        else if (variant == 2 && !string.IsNullOrEmpty(roarTriggerParam))
+        {
+            animator.SetTrigger(roarTriggerParam);
+        }
+
+        ScheduleNextIdleSpecial();
     }
 
     private void PlayRandomClip(AudioClip[] clips)
