@@ -423,9 +423,7 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
 
             if (!string.IsNullOrEmpty(attackTriggerParam))
                 animator.SetTrigger(attackTriggerParam);
-        }
-        else
-        {
+
             DoDamage();
         }
     }
