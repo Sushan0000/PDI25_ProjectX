@@ -1,57 +1,67 @@
+// PlayerHealthBar.cs
 using UnityEngine;
 using UnityEngine.UI;
 
+// Drives a UI Slider to display the player's current health.
 public class PlayerHealthBar : MonoBehaviour
 {
     [Header("References")]
     [SerializeField]
-    private Health playerHealth; // player's Health script
+    private Health playerHealth; // Player's Health component
 
     [SerializeField]
-    private Slider slider; // the UI Slider
+    private Slider slider; // UI Slider showing health
 
-    private float maxHealth;
+    private float maxHealth; // Cached slider max (initial health)
 
+    // Auto-wire references if not set in the inspector.
     private void Awake()
     {
-        // If not assigned, try to auto-find
+        // Try to find a Slider on this object or its children if not assigned.
         if (!slider)
-            slider = GetComponentInChildren<Slider>(); // or GetComponent<Slider>() if script is on the Slider
+            slider = GetComponentInChildren<Slider>();
 
+        // Try to find the player's Health via ControlScript if not assigned.
         if (!playerHealth)
         {
-            // assumes your player has ControlScript and Health on same object
+            // Assumes your player has ControlScript + Health on the same GameObject.
             ControlScript player = Object.FindFirstObjectByType<ControlScript>();
             if (player)
                 playerHealth = player.GetComponent<Health>();
         }
     }
 
+    // Initialize slider range and initial value.
     private void Start()
     {
         if (!playerHealth || !slider)
         {
-            Debug.LogError($"{nameof(PlayerHealthBar)}: Missing references.", this);
+            Debug.LogError($"{nameof(PlayerHealthBar)}: Missing Health or Slider reference.", this);
+            enabled = false; // Disable to avoid spam in Update
             return;
         }
 
+        // Use current health as starting "max" for this bar.
         maxHealth = playerHealth.CurrentHealth;
         if (maxHealth <= 0f)
-            maxHealth = 1f;
+            maxHealth = 1f; // Avoid zero max value
 
         slider.minValue = 0f;
         slider.maxValue = maxHealth;
         slider.value = maxHealth;
 
-        // this bar is only for display, so make it non-interactable
+        // This is a display-only bar.
         slider.interactable = false;
     }
 
+    // Keep the slider value in sync with the player's health.
     private void Update()
     {
         if (!playerHealth || !slider)
             return;
 
-        slider.value = playerHealth.CurrentHealth;
+        // Clamp to avoid weird values if health logic changes later (healing, etc.).
+        float current = Mathf.Clamp(playerHealth.CurrentHealth, slider.minValue, slider.maxValue);
+        slider.value = current;
     }
 }

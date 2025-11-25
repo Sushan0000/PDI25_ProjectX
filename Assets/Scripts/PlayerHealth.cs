@@ -1,34 +1,33 @@
+// PlayerHealth.cs
 using UnityEngine;
 
+// Handles player death: listens to Health.OnDeath, disables controls, plays animation, unlocks cursor.
 [RequireComponent(typeof(Health))]
 public class PlayerHealth : MonoBehaviour
 {
     [Header("References")]
     [SerializeField]
-    private Health health;
+    private Health health; // Player Health component
 
     [SerializeField]
-    private ControlScript controlScript;
+    private ControlScript controlScript; // Player movement / input script
 
     [SerializeField]
-    private Animator animator;
+    private Animator animator; // Animator driving player animations
 
-    // Add references to anything that reads input (weapon, camera, etc.)
     [Header("Other Scripts To Disable On Death")]
     [SerializeField]
     private MonoBehaviour[] extraScriptsToDisable;
 
-    // e.g. drag your Rifle script here, maybe ThirdPersonCameraController if it reads input
+    // Example: Rifle, camera controller, other input-driven scripts
 
     [Header("Animation")]
     [SerializeField]
-    private string deathTriggerName = "Die";
+    private string deathTriggerName = "Die"; // Trigger to start death animatione
 
-    [SerializeField]
-    private string deathBoolName = "IsDead"; // optional
+    private bool isDead; // Ensures death logic runs only once
 
-    private bool isDead;
-
+    // Cache references if not wired in the inspector.
     private void Awake()
     {
         if (!health)
@@ -41,18 +40,21 @@ public class PlayerHealth : MonoBehaviour
             animator = GetComponentInChildren<Animator>();
     }
 
+    // Subscribe to the Health death event.
     private void OnEnable()
     {
         if (health != null)
             health.OnDeath += HandleDeath;
     }
 
+    // Unsubscribe to avoid callbacks on disabled/destroyed objects.
     private void OnDisable()
     {
         if (health != null)
             health.OnDeath -= HandleDeath;
     }
 
+    // Called once when Health reports that the player has died.
     private void HandleDeath()
     {
         if (isDead)
@@ -60,11 +62,11 @@ public class PlayerHealth : MonoBehaviour
 
         isDead = true;
 
-        // stop movement
+        // Stop player movement / input.
         if (controlScript)
             controlScript.enabled = false;
 
-        // stop all other input / shooting scripts
+        // Disable any other scripts that read input (weapons, camera, etc.).
         if (extraScriptsToDisable != null)
         {
             for (int i = 0; i < extraScriptsToDisable.Length; i++)
@@ -74,17 +76,14 @@ public class PlayerHealth : MonoBehaviour
             }
         }
 
-        // play death animation and lock in dead state
+        // Trigger death animation and set persistent dead flag on the animator.
         if (animator && animator.runtimeAnimatorController != null)
         {
             if (!string.IsNullOrEmpty(deathTriggerName))
                 animator.SetTrigger(deathTriggerName);
-
-            if (!string.IsNullOrEmpty(deathBoolName))
-                animator.SetBool(deathBoolName, true);
         }
 
-        // mouse cursor free
+        // Unlock and show mouse cursor so the player can use menus after death.
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
