@@ -148,7 +148,7 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
 
     [Header("Death Animation State")]
     [SerializeField]
-    private string deathStateName = "Die"; // Animator state to blend into when dead
+    private string deathStateName = "Death"; // Animator state to blend into when dead
 
     // =========================================================
     // RUNTIME STATE
