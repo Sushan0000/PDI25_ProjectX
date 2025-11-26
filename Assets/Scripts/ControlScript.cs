@@ -180,8 +180,15 @@ public class ControlScript : MonoBehaviour
         Vector3 lookDir = moveDir;
 
         // While aiming and not moving, face straight along camera forward
-        if (isAiming && !hasInput)
+        if (isAiming || !hasInput) // <-- Change this line: Added '|| !hasInput'
+        {
+            // If not moving, always face where the camera is looking (along the camera's forward vector)
             lookDir = camForward;
+        }
+        else // If moving and not aiming (classic third-person movement), look in the move direction
+        {
+            lookDir = moveDir;
+        }
 
         // ----- Rotate -----
         if (lookDir.sqrMagnitude > 0.0001f)
