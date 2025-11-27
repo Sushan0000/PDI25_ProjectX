@@ -27,7 +27,8 @@ public class Health : MonoBehaviour, IDamageable
     // Convenience wrapper for ApplyDamage.
     public void ObjectHitDamage(float amount)
     {
-        ApplyDamage(amount);    }
+        ApplyDamage(amount);
+    }
 
     // Core damage entry point used by external systems.
     public void ApplyDamage(float amount)
