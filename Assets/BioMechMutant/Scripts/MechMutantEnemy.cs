@@ -158,6 +158,9 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
     private State state = State.Idle; // Current AI state
 
     private float currentHealth; // Current health value
+    public float CurrentHealth => currentHealth;
+    public float MaxHealth => maxHealth;
+    public bool IsDeadPublic => IsDead; // optional, if you want to check death from UI
     private float lastAttackTime; // Time when last attack started
     private float nextPathUpdateTime; // Next time we are allowed to call SetDestination
     private float nextIdleSpecialTime; // Time at which we can play the next idle special
