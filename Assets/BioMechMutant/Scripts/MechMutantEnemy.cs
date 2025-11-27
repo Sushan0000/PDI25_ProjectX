@@ -150,6 +150,22 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
     [SerializeField]
     private string deathStateName = "Death"; // Animator state to blend into when dead
 
+    [Header("Loot Drop")]
+    [SerializeField]
+    private GameObject[] lootPrefabs; // loot prefabs to spawn
+
+    [SerializeField]
+    private Transform lootSpawnPoint; // optional; where loot appears
+
+    [SerializeField, Range(0f, 1f)]
+    private float lootDropChance = 1f; // 1 = always drop, 0.5 = 50%
+
+    [SerializeField]
+    private int minLootCount = 1; // min number of items
+
+    [SerializeField]
+    private int maxLootCount = 1; // max number of items
+
     // =========================================================
     // RUNTIME STATE
     // =========================================================
@@ -570,6 +586,9 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         TriggerDeath();
         PlayRandomClip(deathClips);
 
+        // Spawn loot here
+        SpawnLoot();
+
         // Remove enemy from scene after a delay
         Destroy(gameObject, deathDestroyDelay);
     }
@@ -809,6 +828,40 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         // Cross-fade into a specific death state for smoother start if specified
         if (!string.IsNullOrEmpty(deathStateName))
             animator.CrossFadeInFixedTime(deathStateName, 0.05f, 0, 0f);
+    }
+
+    private void SpawnLoot()
+    {
+        if (lootPrefabs == null || lootPrefabs.Length == 0)
+            return;
+
+        // roll chance
+        if (Random.value > lootDropChance)
+            return;
+
+        // ensure sensible counts
+        int minCount = Mathf.Max(0, minLootCount);
+        int maxCount = Mathf.Max(minCount, maxLootCount);
+
+        int count = Random.Range(minCount, maxCount + 1);
+
+        // base spawn position
+        Vector3 basePos =
+            lootSpawnPoint != null
+                ? lootSpawnPoint.position
+                : transform.position + Vector3.up * 0.5f;
+
+        for (int i = 0; i < count; i++)
+        {
+            GameObject prefab = lootPrefabs[Random.Range(0, lootPrefabs.Length)];
+            if (!prefab)
+                continue;
+
+            // small horizontal offset so items don't overlap perfectly
+            Vector3 offset = new Vector3(Random.Range(-0.5f, 0.5f), 0f, Random.Range(-0.5f, 0.5f));
+
+            Instantiate(prefab, basePos + offset, Quaternion.identity);
+        }
     }
 
     // =========================================================
