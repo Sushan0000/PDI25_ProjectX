@@ -64,5 +64,4 @@ public class PlayerHealthBar : MonoBehaviour
         float current = Mathf.Clamp(playerHealth.CurrentHealth, slider.minValue, slider.maxValue);
         slider.value = current;
     }
-
 }
