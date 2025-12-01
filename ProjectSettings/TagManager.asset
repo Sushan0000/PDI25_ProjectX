@@ -15,13 +15,13 @@ TagManager:
   - UI
   - Surface
   - Player
-  - 
+  - Pickup
   - 
   - Ground
   - NoSpawn
   - 
-  - 
-  - 
+  - MinimapWorld
+  - MinimapIcons
   - 
   - 
   - 
