@@ -1,6 +1,8 @@
 // MechMutantEnemy.cs
+using System; // for Action
 using UnityEngine;
 using UnityEngine.AI;
+using Random = UnityEngine.Random;
 
 /// <summary>
 /// NavMesh-driven melee enemy for FPS games with idle/chase/attack/dead states,
@@ -21,6 +23,12 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         Attacking,
         Dead,
     }
+
+    public static int TotalSpawned { get; private set; }
+    public static int TotalAlive { get; private set; }
+    public static int TotalKilled { get; private set; }
+
+    public static event Action EnemyCountsChanged;
 
     // =========================================================
     // INSPECTOR FIELDS
@@ -208,6 +216,11 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         // Auto-assign AudioSource from this GameObject if not set in inspector
         if (audioSource == null)
             audioSource = GetComponent<AudioSource>();
+
+        // Register this enemy instance in the global counters
+        TotalSpawned++;
+        TotalAlive++;
+        EnemyCountsChanged?.Invoke();
     }
 
     /// <summary>
@@ -788,6 +801,11 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
         if (IsDead)
             return;
 
+        // Update global counters
+        TotalAlive = Mathf.Max(0, TotalAlive - 1);
+        TotalKilled++;
+        EnemyCountsChanged?.Invoke();
+
         // Trigger transition into Dead state (stops AI, triggers animations, etc.)
         ChangeState(State.Dead);
     }
@@ -834,10 +852,10 @@ public class MechMutantEnemy : MonoBehaviour, IDamageable
     {
         if (lootPrefabs == null || lootPrefabs.Length == 0)
             return;
-
         // roll chance
         if (Random.value > lootDropChance)
             return;
+        ;
 
         // ensure sensible counts
         int minCount = Mathf.Max(0, minLootCount);
