@@ -54,6 +54,7 @@ public class PlayerHealth : MonoBehaviour
             health.OnDeath -= HandleDeath;
     }
 
+
     // Called once when Health reports that the player has died.
     private void HandleDeath()
     {
