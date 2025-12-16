@@ -1,4 +1,5 @@
 // PlayerHealth.cs
+using System.Collections;
 using UnityEngine;
 
 // Handles player death: listens to Health.OnDeath, disables controls, plays animation, unlocks cursor.
@@ -14,6 +15,14 @@ public class PlayerHealth : MonoBehaviour
 
     [SerializeField]
     private Animator animator; // Animator driving player animations
+
+    [Header("UI")]
+    [SerializeField]
+    private GameOverUI gameOverUI;
+
+    [Header("Game Over Delay")]
+    [SerializeField]
+    private float gameOverDelaySeconds = 2f;
 
     [Header("Other Scripts To Disable On Death")]
     [SerializeField]
@@ -54,7 +63,6 @@ public class PlayerHealth : MonoBehaviour
             health.OnDeath -= HandleDeath;
     }
 
-
     // Called once when Health reports that the player has died.
     private void HandleDeath()
     {
@@ -80,6 +88,7 @@ public class PlayerHealth : MonoBehaviour
         // Trigger death animation and set persistent dead flag on the animator.
         if (animator && animator.runtimeAnimatorController != null)
         {
+
             if (!string.IsNullOrEmpty(deathTriggerName))
                 animator.SetTrigger(deathTriggerName);
         }
@@ -87,5 +96,17 @@ public class PlayerHealth : MonoBehaviour
         // Unlock and show mouse cursor so the player can use menus after death.
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+    }
+
+    public void OnDeathAnimationFinished()
+    {
+        StartCoroutine(ShowGameOverAfterDelay());
+    }
+
+    private IEnumerator ShowGameOverAfterDelay()
+    {
+        yield return new WaitForSecondsRealtime(gameOverDelaySeconds);
+        if (gameOverUI)
+            gameOverUI.ShowGameOver();
     }
 }
