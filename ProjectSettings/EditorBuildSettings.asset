@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/SlimUI/Modern Menu 1/Scenes/Demos/MainMenu.unity
+    path: Assets/GameArena/MainMenu.unity
     guid: 829a86ba161cdd840842063447f41aab
   - enabled: 1
     path: Assets/GameArena/Map_v1.unity
