@@ -29,7 +29,7 @@ public class MapSceneFixer : MonoBehaviour
 
         // keep only the main camera
         var mainCam = Camera.main;
-        foreach (var cam in FindObjectsOfType<Camera>(true))
+        foreach (var cam in FindObjectsByType<Camera>(FindObjectsSortMode.None))
         {
             if (cam != mainCam)
             {
@@ -40,7 +40,7 @@ public class MapSceneFixer : MonoBehaviour
 
         // disable all post-processing volumes
 #if UNITY_POST_PROCESSING_STACK_V2
-        foreach (var v in FindObjectsOfType<PostProcessVolume>(true))
+        foreach (var v in FindObjectsByType<PostProcessVolume>(FindObjectsSortMode.None))
         {
             Debug.Log(
                 "Disabling PostProcessVolume: "
@@ -52,7 +52,7 @@ public class MapSceneFixer : MonoBehaviour
             v.enabled = false;
         }
 
-        foreach (var l in FindObjectsOfType<PostProcessLayer>(true))
+        foreach (var l in FindObjectsByType<PostProcessLayer>(FindObjectsSortMode.None))
         {
             Debug.Log("Disabling PostProcessLayer on: " + l.gameObject.name);
             l.enabled = false;
@@ -61,7 +61,7 @@ public class MapSceneFixer : MonoBehaviour
 
         // disable URP/HDRP Volumes if present
 #if UNITY_2019_3_OR_NEWER
-        foreach (var v in FindObjectsOfType<Volume>(true))
+        foreach (var v in FindObjectsByType<Volume>(FindObjectsSortMode.None))
         {
             Debug.Log("Disabling Volume: " + v.name + " (scene " + v.gameObject.scene.name + ")");
             v.enabled = false;
